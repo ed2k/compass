@@ -5,7 +5,7 @@ container_image(
     base = "@java_base//image",
     cmd = ["layers_calculator_deploy.jar"],
     files = ["//compass:layers_calculator_deploy.jar"],
-    repository = "iota/compass",
+    repository = "ed2k/test",
 )
 
 container_image(

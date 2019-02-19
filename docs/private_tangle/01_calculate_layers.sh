@@ -1,8 +1,8 @@
 #!/bin/bash
 
 scriptdir=$(dirname "$(readlink -f "$0")")
-. $scriptdir/lib.sh
+#. $scriptdir/lib.sh
 
-load_config
-
-docker run -t --rm -v $scriptdir/data:/data iota/compass/docker:layers_calculator layers_calculator_deploy.jar -sigMode $sigMode -seed $seed -depth $depth -security $security -layers /data/layers -lstart 0 -lcount 16384
+#load_config
+echo hello $1 $2 $3
+docker run -t --rm -v $scriptdir/data:/data ed2k/test/docker:layers_calculator layers_calculator_deploy.jar -sigMode CURLP27 -seed $1 -depth 11 -security 1 -layers /data/layers -lstart $2 -lcount $3
