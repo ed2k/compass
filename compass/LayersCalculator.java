@@ -34,6 +34,10 @@ import org.iota.compass.conf.LayersCalculatorConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.util.Scanner;
+import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.math.RoundingMode;
@@ -53,11 +57,17 @@ public class LayersCalculator implements Runnable {
   private final LayersCalculatorConfiguration config;
   private final SignatureSource signatureSource;
   private final int count;
+  private final int lcount;
+  private final int depth;
+  private final int lstart;
 
   public LayersCalculator(LayersCalculatorConfiguration config, SignatureSource signatureSource) {
+    this.depth = config.depth;
     this.count = 1 << config.depth;
     this.config = config;
     this.signatureSource = signatureSource;
+    this.lstart = config.lstart;
+    this.lcount = config.lcount;
   }
 
   public static void main(String[] args) throws IOException {
@@ -79,26 +89,35 @@ public class LayersCalculator implements Runnable {
     try {
       Files.createDirectory(layersPath);
     } catch (IOException e) {
+      log.info("create path exist "+layersPath);
+      //return;
     }
 
-    List<String> addresses = calculateAllAddresses();
-    log.info("Calculated all addresses.");
-    List<List<String>> layers = calculateAllLayers(addresses);
-
-    for (int i = 0; i < layers.size(); i++) {
-      try {
-        writeLayer(layersPath, i, layers.get(i));
-      } catch (IOException e) {
-        log.error("Error writing layer: " + i, e);
-      }
+    log.info("lstart "+lstart+" lcount "+lcount);
+    if (lcount != 0) {
+      writePartialLastLayer(layersPath, lstart, lcount);
+      return;
     }
-    log.info("Successfully wrote Merkle Tree with root: " + layers.get(0).get(0));
+    checkDepth(layersPath, depth);
+    for (int i = 0; i < depth; i++) {
+        checkDepth(layersPath, depth-1-i);
+        log.info("write layer " + (depth-1-i));
+    }
+    List<String> addresses = readLayer(layersPath, 0);
+    log.info("Successfully wrote Merkle Tree with root: " + addresses);
+
   }
 
-  public List<String> calculateAllAddresses() {
+  public String getAddress(long i) {
+    String s = signatureSource.getAddress(i);
+    //log.info(i+" get addr "+s);
+    return s;
+  }
+
+  public List<String> calculateAllAddresses(int start, int count) {
     log.info("Calculating " + count + " addresses.");
-    List<String> outList = IntStream.range(0, count)
-        .mapToObj(signatureSource::getAddress)
+    List<String> outList = IntStream.range(start, start+count)
+        .mapToObj(this::getAddress)
         .parallel()
         .collect(Collectors.toList());
 
@@ -133,6 +152,21 @@ public class LayersCalculator implements Runnable {
     writer.close();
   }
 
+  private List<String> readLayer(Path outputDir, int depth) {
+    List<String> result = new ArrayList<String>();
+    Path out = Paths.get(outputDir.toString(), ("layer." + depth + ".csv"));
+		try {
+			Scanner scanner = new Scanner(new File(out.toString()));
+			while (scanner.hasNextLine()) {
+				result.add(scanner.nextLine());
+			}
+			scanner.close();
+		} catch (FileNotFoundException e) {
+    }
+    
+    return result;
+  }  
+
   private List<String> calculateNextLayer(List<String> inLayer) {
     log.info("Calculating");
     final List<String> layer = Collections.unmodifiableList(inLayer);
@@ -150,5 +184,70 @@ public class LayersCalculator implements Runnable {
 
       return Converter.trytes(t1);
     }).parallel().collect(Collectors.toList());
+  }
+
+  private void writePartialLastLayer(Path path, int start, int count) {
+    try {
+      Path out = Paths.get(path.toString(), ("layer-" + start + "-"+ count + ".csv"));
+      BufferedWriter writer = Files.newBufferedWriter(out, StandardOpenOption.CREATE);
+      int trunk_size = 1 << 14;
+      int i = 0;
+      while (i < count) {          
+        for (String node : calculateAllAddresses(start+i, trunk_size)) {
+          writer.write(node + "\n");
+        } 
+        log.info("address "+start+i);
+        i += trunk_size;
+      }
+      writer.close();      
+    } catch (IOException e) {
+      log.error("Error layer: ", e);
+    }
+  }
+
+  private void checkDepth(Path path, int dlayer) {
+    final List<String> layer = readLayer(path, dlayer+1);
+    log.info("read " + (dlayer+1) + " " + layer.size());
+
+    // generate addresses then write to file trunk by trunk
+    int trunk_size = 1 << 16;
+    if (layer.size() == 0) {
+      try {
+        Path out = Paths.get(path.toString(), ("layer." + dlayer + ".csv"));
+        BufferedWriter writer = Files.newBufferedWriter(out, StandardOpenOption.CREATE);
+        int start = 0;
+        while (start < count) {          
+          for (String node : calculateAllAddresses(start, trunk_size)) {
+            writer.write(node + "\n");
+          } 
+          log.info("address "+start);
+          start += trunk_size;
+        }
+        writer.close();      
+      } catch (IOException e) {
+        log.error("Error layer: ", e);
+      }
+      return;
+    }
+
+    final List<String> myLayer = IntStream.range(0, layer.size() / 2).mapToObj((int idx) -> {
+      ICurl sp = SpongeFactory.create(signatureSource.getSignatureMode());
+
+      int[] t1 = Converter.trits(layer.get(idx * 2));
+      int[] t2 = Converter.trits(layer.get(idx * 2 + 1));
+
+      sp.absorb(t1, 0, t1.length);
+      sp.absorb(t2, 0, t2.length);
+
+      sp.squeeze(t1, 0, t1.length);
+
+      return Converter.trytes(t1);
+    }).parallel().collect(Collectors.toList());
+
+    try {
+      writeLayer(path, dlayer, myLayer);
+    } catch (IOException e) {
+      log.error("Error layer: ", e);
+    }
   }
 }

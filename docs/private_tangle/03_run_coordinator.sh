@@ -5,7 +5,7 @@ scriptdir=$(dirname "$(readlink -f "$0")")
 
 load_config
 
-docker run -t --net host --rm -v $scriptdir/data:/data iota/compass/docker:coordinator coordinator_deploy.jar \
+docker run -t --net host --rm -v $scriptdir:/data iota/compass/docker:coordinator coordinator_deploy.jar \
 	-layers /data/layers \
 	-sigMode $sigMode \
 	-powMode $powMode \

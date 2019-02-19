@@ -32,6 +32,12 @@ public class LayersCalculatorConfiguration {
   @Parameter(names = "-layers", description = "Path to folder where Merkle Tree layers will be written to", required = true)
   public String layersPath;
 
+  @Parameter(names = "-lstart", description = "lstart ")
+  public int lstart;
+
+  @Parameter(names = "-lcount", description = "lcount")
+  public int lcount;
+
   @Parameter(names = "-depth", description = "Depth the resulting merkle tree", required = true)
   public int depth;
 
